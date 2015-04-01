@@ -13,7 +13,8 @@ object DecisionTreeApp {
     val sc = new SparkContext(conf)
 
     //Inladen data
-    val trainingSet = "D:\\dev\\datasets\\train.csv"
+    val projectRoot = "C:\\Users\\cko20685\\IdeaProjects\\DigitClassification" //TODO: pas aan naar geschikte directory
+    val trainingSet = projectRoot + "\\src\\main\\resources\\train.csv"
     val data = sc.textFile(trainingSet, 2)
 
     //Parsen van data
@@ -30,8 +31,8 @@ object DecisionTreeApp {
     val numberOfClasses = 10
     val categoricalFeaturesInfo = Map[Int, Int]()
     val impurity = "gini"
-    val maxDepth = 10
-    val maxBins = 32
+    val maxDepth = 15
+    val maxBins = 5
 
     //Trainen van model
     val model = DecisionTree.trainClassifier(trainingData, numberOfClasses, categoricalFeaturesInfo,

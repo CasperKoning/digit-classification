@@ -3,52 +3,63 @@ package nl.ordina.decisiontree
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.tree.DecisionTree
+import org.apache.spark.mllib.tree.model.DecisionTreeModel
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
 object DecisionTreeApp {
 
   def main(args: Array[String]) {
-    //Voorbereiden spark context
     val conf = new SparkConf().setAppName("Scala App")
     val sc = new SparkContext(conf)
+    val data = sc.textFile(args(0), 2)
+    val parsedData = parseData(data)
+    val (trainingData, testData) = splitDataToTrainingAndTestData(parsedData)
+    val model = getDecisionTreeModel(trainingData)
+    val labelAndPreds = makePredictions(model, testData)
+    val testErr = computeError(labelAndPreds)
+    println("Percentage of correctly predicted digits: %,.2f".format(100 * (1 - testErr)))
+  }
 
-    //Inladen data
-    val projectRoot = "C:\\Users\\cko20685\\IdeaProjects\\DigitClassification" //TODO: pas aan naar geschikte directory
-    val trainingSet = projectRoot + "\\src\\main\\resources\\train.csv"
-    val data = sc.textFile(trainingSet, 2)
-
-    //Parsen van data
-    val parsedData = data.map { line =>
-        val parts = line.split(',').map(_.toInt)
-        LabeledPoint(parts(0), Vectors.dense(parts.tail.map(_.toDouble)))
+  def parseData(data: RDD[String]): RDD[LabeledPoint] = {
+    data.map { line =>
+      val parts = line.split(',').map(_.toInt)
+      LabeledPoint(parts(0), Vectors.dense(parts.tail.map(_.toDouble)))
     }
+  }
 
-    //Opdelen van data in training set en test set
-    val splits = parsedData.randomSplit(Array(0.7, 0.3))
-    val (trainingData, testData) = (splits(0), splits(1))
+  def splitDataToTrainingAndTestData(data: RDD[LabeledPoint]): (RDD[LabeledPoint], RDD[LabeledPoint]) = {
+    val splits = data.randomSplit(Array(0.7, 0.3))
+    (splits(0), splits(1))
+  }
 
-    //Configuratie van decision tree algoritme
-    val numberOfClasses = 10
-    val categoricalFeaturesInfo = Map[Int, Int]()
-    val impurity = "gini"
-    val maxDepth = 15
-    val maxBins = 5
+  private def getDecisionTreeModel(data: RDD[LabeledPoint]): DecisionTreeModel = {
+    data.cache() //Caching of data because it is reused throughout the training of the model.
+    //If we did not cache the data, the data has to be recomputed from source through the DAG.
 
-    //Trainen van model
-    val model = DecisionTree.trainClassifier(trainingData, numberOfClasses, categoricalFeaturesInfo,
-      impurity, maxDepth, maxBins)
+    DecisionTree.trainClassifier(
+      input = data,
+      numClasses = 10,
+      categoricalFeaturesInfo = Map[Int, Int](),
+      impurity = "gini",
+      maxDepth = 15,
+      maxBins = 5
+    )
+  }
 
-    //Voer model uit op testdata
-    val labelAndPreds = testData.map { point =>
+  def makePredictions(model: DecisionTreeModel, testData: RDD[LabeledPoint]): RDD[(Double, Double)] = {
+    testData.map { point =>
       val prediction = model.predict(point.features)
       (point.label, prediction)
     }
-
-    //Bereken fout van model
-    val testErr = labelAndPreds.filter(r => r._1 != r._2).count().toDouble / testData.count()
-
-    //Print fout
-    println("Correct voorspeld: %,.2f".format(100*(1-testErr)))
   }
 
+  def computeError(labelAndPreds: RDD[(Double, Double)]): Double = {
+    val correctPredictions = labelAndPreds.filter(r => r._1 != r._2)
+                                          .count()
+                                          .toDouble
+    val totalAmount = labelAndPreds.count()
+
+    correctPredictions/totalAmount
+  }
 }

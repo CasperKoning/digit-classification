@@ -7,24 +7,26 @@ import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
+import scala.reflect.io.File
+
 object DecisionTreeApp {
 
   def main(args: Array[String]) {
     val conf = new SparkConf().setAppName("Scala App")
     val sc = new SparkContext(conf)
-    val data = sc.textFile(args(0), 2)
+    val data = sc.textFile(args(0))
     val parsedData = parseData(data)
     val (trainingData, testData) = splitDataToTrainingAndTestData(parsedData)
     val model = getDecisionTreeModel(trainingData)
     val labelAndPreds = makePredictions(model, testData)
     val testErr = computeError(labelAndPreds)
-    println("Percentage of correctly predicted digits: %,.2f".format(100 * (1 - testErr)))
+    writeOutput(args(1), s"Percentage of correctly predicted digits: ${100 * (1 - testErr)}%")
   }
 
   def parseData(data: RDD[String]): RDD[LabeledPoint] = {
     data.map { line =>
       val parts = line.split(',').map(_.toInt)
-      LabeledPoint(parts(0), Vectors.dense(parts.tail.map(_.toDouble)))
+      LabeledPoint(parts.head, Vectors.dense(parts.tail.map(_.toDouble)))
     }
   }
 
@@ -55,11 +57,18 @@ object DecisionTreeApp {
   }
 
   def computeError(labelAndPreds: RDD[(Double, Double)]): Double = {
-    val correctPredictions = labelAndPreds.filter(r => r._1 != r._2)
-                                          .count()
-                                          .toDouble
+    val correctPredictions = labelAndPreds.filter(labelAndPredictionAreNotEqual)
+      .count()
+      .toDouble
     val totalAmount = labelAndPreds.count()
+    correctPredictions / totalAmount
+  }
 
-    correctPredictions/totalAmount
+  def labelAndPredictionAreNotEqual: ((Double, Double)) => Boolean = {
+    r => r._1 != r._2
+  }
+
+  def writeOutput(outputFolder: String, output: String): Unit = {
+    File(outputFolder + "/digit-classification-output").writeAll(output)
   }
 }
